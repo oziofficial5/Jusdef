@@ -1,0 +1,11 @@
+data/raw/
+data/processed/embeddings/
+data/processed/graphs/
+outputs/checkpoints/
+outputs/logs/
+wandb/
+__pycache__/
+*.pyc
+*.pt
+*.npy
+*.h5
