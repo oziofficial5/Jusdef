@@ -1,0 +1,201 @@
+import torch
+from torch_geometric.data import HeteroData
+from typing import Dict, Any, List
+
+OPERATOR_TO_INT = {
+    "AFF": 0,
+    "NEG": 1,
+    "EXC": 2,
+    "OVR": 3,
+}
+
+
+def build_document_graph(
+    doc_struct: Dict[str, Any],
+    doc_emb: torch.Tensor,
+    section_embs: torch.Tensor,
+    label_embs: torch.Tensor,
+) -> HeteroData:
+    """
+    Build a JusDef HeteroData graph for a single document.
+
+    doc_struct: one entry from *_processed.pkl:
+      {
+        "doc_id": int,
+        "labels": List[int],
+        "sections": [
+          {
+            "type": str,
+            "type_int": int,
+            "text": str,
+            "concepts": [
+              {"label_idx": int, "operator": str, ...}
+            ],
+            "authorities": [
+              {"text": str, "type": str, "level": float, "recency": float, ...}
+            ]
+          },
+          ...
+        ]
+      }
+    """
+    data = HeteroData()
+
+    sections: List[Dict[str, Any]] = doc_struct["sections"]
+    n_sec = len(sections)
+
+    # DOC node
+    data["doc"].x = doc_emb.unsqueeze(0)  # (1, 768)
+
+    # SEC nodes
+    if section_embs is not None and section_embs.size(0) == n_sec:
+        data["sec"].x = section_embs  # (N_sec, 768)
+    else:
+        data["sec"].x = doc_emb.unsqueeze(0).expand(n_sec, -1).clone()
+
+    sec_types = [sec.get("type_int", 2) for sec in sections]
+    data["sec"].type_id = torch.tensor(sec_types, dtype=torch.long)
+
+    # CONC nodes (unique label_idx per doc)
+    conc_id_map: Dict[int, int] = {}
+    conc_embs: List[torch.Tensor] = []
+
+    for sec in sections:
+        for c in sec.get("concepts", []):
+            label_idx = c.get("label_idx")
+            if label_idx is None:
+                continue
+            if label_idx not in conc_id_map and 0 <= label_idx < label_embs.size(0):
+                conc_id_map[label_idx] = len(conc_id_map)
+                conc_embs.append(label_embs[label_idx])
+
+    if conc_embs:
+        data["conc"].x = torch.stack(conc_embs, dim=0)
+        data["conc"].global_id = torch.tensor(
+            list(conc_id_map.keys()), dtype=torch.long
+        )
+    else:
+        data["conc"].x = torch.zeros(1, label_embs.size(1))
+        data["conc"].global_id = torch.tensor([0], dtype=torch.long)
+        conc_id_map[0] = 0
+
+    # AUTH nodes
+    auth_map: Dict[str, int] = {}
+    auth_features: List[List[float]] = []
+
+    type_to_int = {
+        "REGULATION": 0,
+        "DIRECTIVE": 1,
+        "DECISION": 2,
+        "ARTICLE": 3,
+        "CASE": 4,
+    }
+
+    for sec in sections:
+        for a in sec.get("authorities", []):
+            key = a.get("text", "")
+            if not key:
+                continue
+            if key not in auth_map:
+                auth_map[key] = len(auth_map)
+                atype = a.get("type", "ARTICLE")
+                level = float(a.get("level", 2.0))
+                recency = float(a.get("recency", 0.5))
+                auth_features.append(
+                    [float(type_to_int.get(atype, 3)), level, recency]
+                )
+
+    if auth_features:
+        data["auth"].x = torch.zeros(len(auth_features), label_embs.size(1))
+        data["auth"].features = torch.tensor(auth_features, dtype=torch.float)
+    else:
+        data["auth"].x = torch.zeros(1, label_embs.size(1))
+        data["auth"].features = torch.tensor([[3.0, 2.0, 0.5]], dtype=torch.float)
+
+    # LABEL nodes
+    data["label"].x = label_embs  # (100, 768)
+
+    # doc - has_section -> sec
+    if n_sec > 0:
+        src = torch.zeros(n_sec, dtype=torch.long)
+        dst = torch.arange(n_sec, dtype=torch.long)
+        data["doc", "has_section", "sec"].edge_index = torch.stack([src, dst], dim=0)
+    else:
+        data["doc", "has_section", "sec"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+
+    # sec - mentions -> conc (with operator, priority)
+    r2_src, r2_dst, r2_ops, r2_pri = [], [], [], []
+
+    for si, sec in enumerate(sections):
+        auths = sec.get("authorities", [])
+        if auths:
+            pri = max(float(a.get("level", 1.0)) for a in auths)
+        else:
+            pri = 1.0
+
+        for c in sec.get("concepts", []):
+            label_idx = c.get("label_idx")
+            if label_idx is None:
+                continue
+            local_idx = conc_id_map.get(label_idx)
+            if local_idx is None:
+                continue
+            op_str = c.get("operator", "AFF")
+            op_id = OPERATOR_TO_INT.get(op_str, 0)
+
+            r2_src.append(si)
+            r2_dst.append(local_idx)
+            r2_ops.append(op_id)
+            r2_pri.append(pri)
+
+    if r2_src:
+        data["sec", "mentions", "conc"].edge_index = torch.tensor(
+            [r2_src, r2_dst], dtype=torch.long
+        )
+        data["sec", "mentions", "conc"].operator = torch.tensor(r2_ops, dtype=torch.long)
+        data["sec", "mentions", "conc"].priority = torch.tensor(r2_pri, dtype=torch.float)
+    else:
+        data["sec", "mentions", "conc"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+        data["sec", "mentions", "conc"].operator = torch.zeros(0, dtype=torch.long)
+        data["sec", "mentions", "conc"].priority = torch.zeros(0, dtype=torch.float)
+
+    # sec - cites -> auth
+    r4_src, r4_dst = [], []
+
+    for si, sec in enumerate(sections):
+        for a in sec.get("authorities", []):
+            key = a.get("text", "")
+            if key in auth_map:
+                ai = auth_map[key]
+                r4_src.append(si)
+                r4_dst.append(ai)
+
+    if r4_src:
+        data["sec", "cites", "auth"].edge_index = torch.tensor(
+            [r4_src, r4_dst], dtype=torch.long
+        )
+    else:
+        data["sec", "cites", "auth"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+
+    # label - maps_to -> conc
+    r7_src, r7_dst = [], []
+
+    for label_idx, local_idx in conc_id_map.items():
+        r7_src.append(label_idx)
+        r7_dst.append(local_idx)
+
+    if r7_src:
+        data["label", "maps_to", "conc"].edge_index = torch.tensor(
+            [r7_src, r7_dst], dtype=torch.long
+        )
+    else:
+        data["label", "maps_to", "conc"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+
+    # Targets y
+    target = torch.zeros(label_embs.size(0), dtype=torch.float)
+    for l in doc_struct.get("labels", []):
+        if 0 <= l < label_embs.size(0):
+            target[l] = 1.0
+    data.y = target
+
+    return data
