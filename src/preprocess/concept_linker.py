@@ -51,7 +51,7 @@ def embed_texts(texts: List[str], tokenizer, model, device: str = "cpu", batch_s
 
 def extract_noun_phrases(text: str) -> List[Tuple[str, int, int]]:
     nlp = get_spacy_nlp()
-    doc = nlp(text)
+    doc = nlp(text[:500000])
     phrases = []
     for np in doc.noun_chunks:
         span_text = np.text.strip()
