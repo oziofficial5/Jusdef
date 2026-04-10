@@ -115,15 +115,19 @@ def build_document_graph(
     # LABEL nodes
     data["label"].x = label_embs  # (100, 768)
 
-    # doc - has_section -> sec
+    # ═══ EDGES ═══
+
+    # r1: doc -> sec (containment)
     if n_sec > 0:
         src = torch.zeros(n_sec, dtype=torch.long)
         dst = torch.arange(n_sec, dtype=torch.long)
         data["doc", "has_section", "sec"].edge_index = torch.stack([src, dst], dim=0)
     else:
-        data["doc", "has_section", "sec"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+        data["doc", "has_section", "sec"].edge_index = torch.zeros(
+            (2, 0), dtype=torch.long
+        )
 
-    # sec - mentions -> conc (with operator, priority)
+    # r2: sec -> conc (concept mention with operator + priority)
     r2_src, r2_dst, r2_ops, r2_pri = [], [], [], []
 
     for si, sec in enumerate(sections):
@@ -152,14 +156,24 @@ def build_document_graph(
         data["sec", "mentions", "conc"].edge_index = torch.tensor(
             [r2_src, r2_dst], dtype=torch.long
         )
-        data["sec", "mentions", "conc"].operator = torch.tensor(r2_ops, dtype=torch.long)
-        data["sec", "mentions", "conc"].priority = torch.tensor(r2_pri, dtype=torch.float)
+        data["sec", "mentions", "conc"].operator = torch.tensor(
+            r2_ops, dtype=torch.long
+        )
+        data["sec", "mentions", "conc"].priority = torch.tensor(
+            r2_pri, dtype=torch.float
+        )
     else:
-        data["sec", "mentions", "conc"].edge_index = torch.zeros((2, 0), dtype=torch.long)
-        data["sec", "mentions", "conc"].operator = torch.zeros(0, dtype=torch.long)
-        data["sec", "mentions", "conc"].priority = torch.zeros(0, dtype=torch.float)
+        data["sec", "mentions", "conc"].edge_index = torch.zeros(
+            (2, 0), dtype=torch.long
+        )
+        data["sec", "mentions", "conc"].operator = torch.zeros(
+            0, dtype=torch.long
+        )
+        data["sec", "mentions", "conc"].priority = torch.zeros(
+            0, dtype=torch.float
+        )
 
-    # sec - cites -> auth
+    # r4: sec -> auth (citation)
     r4_src, r4_dst = [], []
 
     for si, sec in enumerate(sections):
@@ -175,9 +189,11 @@ def build_document_graph(
             [r4_src, r4_dst], dtype=torch.long
         )
     else:
-        data["sec", "cites", "auth"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+        data["sec", "cites", "auth"].edge_index = torch.zeros(
+            (2, 0), dtype=torch.long
+        )
 
-    # label - maps_to -> conc
+    # r7: label -> conc (concept-label mapping)
     r7_src, r7_dst = [], []
 
     for label_idx, local_idx in conc_id_map.items():
@@ -189,9 +205,17 @@ def build_document_graph(
             [r7_src, r7_dst], dtype=torch.long
         )
     else:
-        data["label", "maps_to", "conc"].edge_index = torch.zeros((2, 0), dtype=torch.long)
+        data["label", "maps_to", "conc"].edge_index = torch.zeros(
+            (2, 0), dtype=torch.long
+        )
 
-    # Targets y
+    # r8: label -> label (EuroVoc hierarchy, placeholder for now)
+    # Will be populated when EuroVoc adjacency matrix is available
+    data["label", "parent_of", "label"].edge_index = torch.zeros(
+        (2, 0), dtype=torch.long
+    )
+
+    # ═══ TARGET LABELS ═══
     target = torch.zeros(label_embs.size(0), dtype=torch.float)
     for l in doc_struct.get("labels", []):
         if 0 <= l < label_embs.size(0):
