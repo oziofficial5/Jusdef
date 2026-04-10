@@ -1,0 +1,402 @@
+{
+  "0": {
+    "id": "100163",
+    "name": "0406 political framework"
+  },
+  "1": {
+    "id": "100168",
+    "name": "0431 politics and public safety"
+  },
+  "2": {
+    "id": "100169",
+    "name": "0436 executive power and public service"
+  },
+  "3": {
+    "id": "100170",
+    "name": "0806 international affairs"
+  },
+  "4": {
+    "id": "100171",
+    "name": "0811 cooperation policy"
+  },
+  "5": {
+    "id": "100172",
+    "name": "0816 international security"
+  },
+  "6": {
+    "id": "100173",
+    "name": "0821 defence"
+  },
+  "7": {
+    "id": "100174",
+    "name": "1006 EU institutions and European civil service"
+  },
+  "8": {
+    "id": "100175",
+    "name": "1011 European Union law"
+  },
+  "9": {
+    "id": "100176",
+    "name": "1016 European construction"
+  },
+  "10": {
+    "id": "100177",
+    "name": "1021 EU finance"
+  },
+  "11": {
+    "id": "100179",
+    "name": "1211 civil law"
+  },
+  "12": {
+    "id": "100180",
+    "name": "1216 criminal law"
+  },
+  "13": {
+    "id": "100183",
+    "name": "1231 international law"
+  },
+  "14": {
+    "id": "100184",
+    "name": "1236 rights and freedoms"
+  },
+  "15": {
+    "id": "100185",
+    "name": "1606 economic policy"
+  },
+  "16": {
+    "id": "100186",
+    "name": "1611 economic conditions"
+  },
+  "17": {
+    "id": "100187",
+    "name": "1616 regions and regional policy"
+  },
+  "18": {
+    "id": "100189",
+    "name": "1626 national accounts"
+  },
+  "19": {
+    "id": "100190",
+    "name": "1631 economic analysis"
+  },
+  "20": {
+    "id": "100191",
+    "name": "2006 trade policy"
+  },
+  "21": {
+    "id": "100192",
+    "name": "2011 tariff policy"
+  },
+  "22": {
+    "id": "100193",
+    "name": "2016 trade"
+  },
+  "23": {
+    "id": "100194",
+    "name": "2021 international trade"
+  },
+  "24": {
+    "id": "100195",
+    "name": "2026 consumption"
+  },
+  "25": {
+    "id": "100196",
+    "name": "2031 marketing"
+  },
+  "26": {
+    "id": "100197",
+    "name": "2036 distributive trades"
+  },
+  "27": {
+    "id": "100198",
+    "name": "2406 monetary relations"
+  },
+  "28": {
+    "id": "100199",
+    "name": "2411 monetary economics"
+  },
+  "29": {
+    "id": "100200",
+    "name": "2416 financial institutions and credit"
+  },
+  "30": {
+    "id": "100201",
+    "name": "2421 free movement of capital"
+  },
+  "31": {
+    "id": "100202",
+    "name": "2426 financing and investment"
+  },
+  "32": {
+    "id": "100204",
+    "name": "2436 public finance and budget policy"
+  },
+  "33": {
+    "id": "100205",
+    "name": "2441 budget"
+  },
+  "34": {
+    "id": "100206",
+    "name": "2446 taxation"
+  },
+  "35": {
+    "id": "100207",
+    "name": "2451 prices"
+  },
+  "36": {
+    "id": "100212",
+    "name": "2826 social affairs"
+  },
+  "37": {
+    "id": "100214",
+    "name": "2836 social protection"
+  },
+  "38": {
+    "id": "100215",
+    "name": "2841 health"
+  },
+  "39": {
+    "id": "100220",
+    "name": "3221 documentation"
+  },
+  "40": {
+    "id": "100221",
+    "name": "3226 communications"
+  },
+  "41": {
+    "id": "100222",
+    "name": "3231 information and information processing"
+  },
+  "42": {
+    "id": "100223",
+    "name": "3236 information technology and data processing"
+  },
+  "43": {
+    "id": "100224",
+    "name": "3606 natural and applied sciences"
+  },
+  "44": {
+    "id": "100226",
+    "name": "4006 business organisation"
+  },
+  "45": {
+    "id": "100227",
+    "name": "4011 business classification"
+  },
+  "46": {
+    "id": "100229",
+    "name": "4021 management"
+  },
+  "47": {
+    "id": "100230",
+    "name": "4026 accounting"
+  },
+  "48": {
+    "id": "100231",
+    "name": "4031 competition"
+  },
+  "49": {
+    "id": "100232",
+    "name": "4406 employment"
+  },
+  "50": {
+    "id": "100233",
+    "name": "4411 labour market"
+  },
+  "51": {
+    "id": "100234",
+    "name": "4416 organisation of work and working conditions"
+  },
+  "52": {
+    "id": "100235",
+    "name": "4421 personnel management and staff remuneration"
+  },
+  "53": {
+    "id": "100237",
+    "name": "4806 transport policy"
+  },
+  "54": {
+    "id": "100238",
+    "name": "4811 organisation of transport"
+  },
+  "55": {
+    "id": "100239",
+    "name": "4816 land transport"
+  },
+  "56": {
+    "id": "100240",
+    "name": "4821 maritime and inland waterway transport"
+  },
+  "57": {
+    "id": "100241",
+    "name": "4826 air and space transport"
+  },
+  "58": {
+    "id": "100242",
+    "name": "5206 environmental policy"
+  },
+  "59": {
+    "id": "100243",
+    "name": "5211 natural environment"
+  },
+  "60": {
+    "id": "100244",
+    "name": "5216 deterioration of the environment"
+  },
+  "61": {
+    "id": "100245",
+    "name": "5606 agricultural policy"
+  },
+  "62": {
+    "id": "100246",
+    "name": "5611 agricultural structures and production"
+  },
+  "63": {
+    "id": "100247",
+    "name": "5616 farming systems"
+  },
+  "64": {
+    "id": "100248",
+    "name": "5621 cultivation of agricultural land"
+  },
+  "65": {
+    "id": "100249",
+    "name": "5626 means of agricultural production"
+  },
+  "66": {
+    "id": "100250",
+    "name": "5631 agricultural activity"
+  },
+  "67": {
+    "id": "100252",
+    "name": "5641 fisheries"
+  },
+  "68": {
+    "id": "100253",
+    "name": "6006 plant product"
+  },
+  "69": {
+    "id": "100254",
+    "name": "6011 animal product"
+  },
+  "70": {
+    "id": "100255",
+    "name": "6016 processed agricultural produce"
+  },
+  "71": {
+    "id": "100256",
+    "name": "6021 beverages and sugar"
+  },
+  "72": {
+    "id": "100257",
+    "name": "6026 foodstuff"
+  },
+  "73": {
+    "id": "100258",
+    "name": "6031 agri-foodstuffs"
+  },
+  "74": {
+    "id": "100259",
+    "name": "6036 food technology"
+  },
+  "75": {
+    "id": "100260",
+    "name": "6406 production"
+  },
+  "76": {
+    "id": "100261",
+    "name": "6411 technology and technical regulations"
+  },
+  "77": {
+    "id": "100262",
+    "name": "6416 research and intellectual property"
+  },
+  "78": {
+    "id": "100263",
+    "name": "6606 energy policy"
+  },
+  "79": {
+    "id": "100264",
+    "name": "6611 coal and mining industries"
+  },
+  "80": {
+    "id": "100265",
+    "name": "6616 oil industry"
+  },
+  "81": {
+    "id": "100266",
+    "name": "6621 electrical and nuclear industries"
+  },
+  "82": {
+    "id": "100268",
+    "name": "6806 industrial structures and policy"
+  },
+  "83": {
+    "id": "100269",
+    "name": "6811 chemistry"
+  },
+  "84": {
+    "id": "100270",
+    "name": "6816 iron, steel and other metal industries"
+  },
+  "85": {
+    "id": "100271",
+    "name": "6821 mechanical engineering"
+  },
+  "86": {
+    "id": "100272",
+    "name": "6826 electronics and electrical engineering"
+  },
+  "87": {
+    "id": "100273",
+    "name": "6831 building and public works"
+  },
+  "88": {
+    "id": "100274",
+    "name": "6836 wood industry"
+  },
+  "89": {
+    "id": "100275",
+    "name": "6841 leather and textile industries"
+  },
+  "90": {
+    "id": "100276",
+    "name": "6846 miscellaneous industries"
+  },
+  "91": {
+    "id": "100277",
+    "name": "7206 Europe"
+  },
+  "92": {
+    "id": "100278",
+    "name": "7211 regions of EU Member States"
+  },
+  "93": {
+    "id": "100279",
+    "name": "7216 America"
+  },
+  "94": {
+    "id": "100280",
+    "name": "7221 Africa"
+  },
+  "95": {
+    "id": "100281",
+    "name": "7226 Asia and Oceania"
+  },
+  "96": {
+    "id": "100282",
+    "name": "7231 economic geography"
+  },
+  "97": {
+    "id": "100283",
+    "name": "7236 political geography"
+  },
+  "98": {
+    "id": "100284",
+    "name": "7241 overseas countries and territories"
+  },
+  "99": {
+    "id": "100285",
+    "name": "7606 United Nations"
+  }
+}
