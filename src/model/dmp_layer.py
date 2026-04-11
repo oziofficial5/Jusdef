@@ -86,7 +86,7 @@ def compute_defeat_mask(operators, priorities, dst_nodes, temperature=5.0):
     Args:
         operators: tensor (E,) int — operator type per edge (0=AFF..3=OVR)
         priorities: tensor (E,) float — authority priority per edge
-        dst_nodes: tensor (E,) int — target concept node per edge
+        dst_nodes: tensor (E,) int — grouping key (e.g. target concept id)
         temperature: float — STE temperature
 
     Returns:
@@ -103,11 +103,11 @@ def compute_defeat_mask(operators, priorities, dst_nodes, temperature=5.0):
     # If no j defeats i, gap stays at -inf → mask = 1 (active)
     priority_gap = torch.full((E,), -1e9, device=operators.device)
 
-    # Group edges by destination node for efficiency
+    # Group edges by destination/group node for efficiency
     unique_dsts = dst_nodes.unique()
 
     for dst in unique_dsts:
-        # Find all edges targeting this concept node
+        # Find all edges in this group
         mask = (dst_nodes == dst)
         indices = mask.nonzero(as_tuple=True)[0]
 
@@ -183,13 +183,15 @@ class DMPLayer(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, src_embs, dst_node_ids, operators, priorities, num_dst):
+    def forward(self, src_embs, dst_node_ids, operators, priorities,
+                concept_ids, num_dst):
         """
         Args:
             src_embs: tensor (E, in_dim) — source node embeddings for each r2 edge
             dst_node_ids: tensor (E,) — which concept node each message targets
             operators: tensor (E,) int — operator type per edge
             priorities: tensor (E,) float — authority priority per edge
+            concept_ids: tensor (E,) int — concept ID for defeat scoping
             num_dst: int — total number of concept nodes
 
         Returns:
@@ -208,9 +210,9 @@ class DMPLayer(nn.Module):
             if op_mask.any():
                 msg[op_mask] = self.W_op[op_idx](src_embs[op_mask])
 
-        # Step 2: Compute defeat mask
+        # Step 2: Compute defeat mask (grouped by concept_ids)
         defeat_mask = compute_defeat_mask(
-            operators, priorities, dst_node_ids, self.temperature
+            operators, priorities, concept_ids, self.temperature
         )  # (E,) — 1=active, 0=defeated
 
         # Step 3: Apply mask to messages
@@ -240,7 +242,7 @@ class DMPLayer(nn.Module):
         return self.dropout(out)
 
     def get_active_defeated_embeddings(self, src_embs, dst_node_ids,
-                                       operators, priorities):
+                                       operators, priorities, concept_ids):
         """
         Helper for L_defeat loss: return separate tensors of active
         and defeated message embeddings.
@@ -251,7 +253,8 @@ class DMPLayer(nn.Module):
         """
         E = src_embs.size(0)
         if E == 0:
-            return torch.zeros(0, self.out_dim), torch.zeros(0, self.out_dim)
+            return (torch.zeros(0, self.out_dim, device=src_embs.device),
+                    torch.zeros(0, self.out_dim, device=src_embs.device))
 
         # Transform messages
         msg = torch.zeros(E, self.out_dim, device=src_embs.device)
@@ -260,9 +263,9 @@ class DMPLayer(nn.Module):
             if op_mask.any():
                 msg[op_mask] = self.W_op[op_idx](src_embs[op_mask])
 
-        # Compute mask
+        # Compute mask with the same grouping key as in forward
         defeat_mask = compute_defeat_mask(
-            operators, priorities, dst_node_ids, self.temperature
+            operators, priorities, concept_ids, self.temperature
         )
 
         active = msg[defeat_mask > 0.5]

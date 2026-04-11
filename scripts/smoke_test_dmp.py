@@ -17,8 +17,8 @@ from src.model.dmp_layer import DMPLayer, compute_defeat_mask
 
 print("=== Test 1: Proposition 2 (all AFF, equal priority → no defeats) ===")
 operators = torch.zeros(5, dtype=torch.long)   # all AFF
-priorities = torch.ones(5) * 0.5                # equal
-dst_nodes = torch.zeros(5, dtype=torch.long)    # all target same node
+priorities = torch.ones(5) * 0.5               # equal
+dst_nodes = torch.zeros(5, dtype=torch.long)   # all target same node
 
 mask = compute_defeat_mask(operators, priorities, dst_nodes)
 print(f"  Mask: {mask.tolist()}")
@@ -65,7 +65,9 @@ dst_ids = torch.tensor([0, 0, 0, 1, 1, 2, 2, 2])
 ops = torch.tensor([0, 1, 2, 0, 3, 0, 1, 2])
 pris = torch.rand(8)
 
-out = layer(src_embs, dst_ids, ops, pris, num_dst=3)
+concept_ids = dst_ids  # grouping key for defeat
+
+out = layer(src_embs, dst_ids, ops, pris, concept_ids, num_dst=3)
 print(f"  Output shape: {out.shape}")
 assert out.shape == (3, 512), f"FAILED: Expected (3, 512), got {out.shape}"
 assert not torch.isnan(out).any(), "FAILED: NaN in output"
@@ -76,16 +78,21 @@ print("  PASSED")
 
 print("\n=== Test 6: Empty input ===")
 empty_out = layer(
-    torch.zeros(0, 512), torch.zeros(0, dtype=torch.long),
-    torch.zeros(0, dtype=torch.long), torch.zeros(0), num_dst=3
+    torch.zeros(0, 512),
+    torch.zeros(0, dtype=torch.long),
+    torch.zeros(0, dtype=torch.long),
+    torch.zeros(0),
+    torch.zeros(0, dtype=torch.long),  # empty concept_ids
+    num_dst=3,
 )
 print(f"  Empty output shape: {empty_out.shape}")
 assert empty_out.shape == (3, 512), "FAILED: Empty input should produce zeros"
 print("  PASSED")
 
 print("\n=== Test 7: Active/defeated embedding separation ===")
+concept_ids = dst_ids  # reuse the same grouping key
 active, defeated = layer.get_active_defeated_embeddings(
-    src_embs, dst_ids, ops, pris
+    src_embs, dst_ids, ops, pris, concept_ids
 )
 print(f"  Active: {active.shape}, Defeated: {defeated.shape}")
 total = active.shape[0] + defeated.shape[0]
