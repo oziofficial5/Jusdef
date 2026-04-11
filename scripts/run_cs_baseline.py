@@ -5,19 +5,24 @@ import argparse
 import numpy as np
 import torch
 from pathlib import Path
-from sklearn.metrics import f1_score
 
 # Add project root to sys.path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.model.baselines import legalbert_cosine_baseline, tune_threshold
+from src.model.baselines import legalbert_cosine_baseline
 from src.train.label_propagation import cs_label_propagation
 from src.preprocess.data_loader import (
     load_eurlex,
     make_seen_unseen_split,
     get_label_names,
+)
+from src.eval.metrics import (
+    compute_all_metrics,
+    load_exception_labels,
+    print_results,
+    save_results,
 )
 
 
@@ -117,67 +122,30 @@ def main():
                 f"targets {val_targets.shape}"
             )
 
-    # Tune threshold on validation
-    best_thresh, val_macro = tune_threshold(val_scores, val_targets)
+    # Shared evaluation: tune on val, report on test
+    exc_labels = load_exception_labels()
 
-    # Apply threshold
-    val_preds = (val_scores >= best_thresh).astype(int)
-    test_preds = (test_scores >= best_thresh).astype(int)
+    val_metrics = compute_all_metrics(
+        val_scores, val_targets, seen, unseen, exc_labels
+    )
 
-    # Metrics
-    val_micro = f1_score(val_targets, val_preds, average="micro", zero_division=0)
-    test_macro = f1_score(test_targets, test_preds, average="macro", zero_division=0)
-    test_micro = f1_score(test_targets, test_preds, average="micro", zero_division=0)
-
-    # Macro-F1 on unseen labels
-    unseen_idx = list(unseen)
-    test_macro_unseen = f1_score(
-        test_targets[:, unseen_idx],
-        test_preds[:, unseen_idx],
-        average="macro",
-        zero_division=0,
+    test_metrics = compute_all_metrics(
+        test_scores, test_targets, seen, unseen, exc_labels,
+        threshold=val_metrics["threshold"],
     )
 
     results = {
         "model": "cs_label_propagation",
         "alpha": args.alpha,
         "steps": args.steps,
-        "best_threshold": float(best_thresh),
-        "val_macro_f1": float(val_macro),
-        "val_micro_f1": float(val_micro),
-        "test_macro_f1": float(test_macro),
-        "test_micro_f1": float(test_micro),
-        "test_macro_f1_unseen": float(test_macro_unseen),
         "n_val_docs": len(df_val),
         "n_test_docs": len(df_test),
+        "val": val_metrics,
+        "test": test_metrics,
     }
 
-    # Optional exception label subset metric
-    exc_path = Path("data/annotations/exception_labels.json")
-    if exc_path.exists():
-        with open(exc_path, "r", encoding="utf-8") as f:
-            exc_data = json.load(f)
-        exc_idx = exc_data.get("exception_override_labels", [])
-        if exc_idx:
-            test_macro_exc = f1_score(
-                test_targets[:, exc_idx],
-                test_preds[:, exc_idx],
-                average="macro",
-                zero_division=0,
-            )
-            results["test_macro_f1_exc"] = float(test_macro_exc)
-
-    # Save results
-    out_dir = Path("outputs/logs")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "baseline_cs_label_propagation.json"
-
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-
-    print()
-    print(json.dumps(results, indent=2))
-    print(f"\nSaved to {out_path}")
+    print_results(test_metrics, "C&S Label Propagation")
+    save_results(results, "outputs/logs/baseline_cs_label_propagation.json")
 
 
 if __name__ == "__main__":
