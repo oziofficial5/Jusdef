@@ -181,14 +181,14 @@ class JusDef(nn.Module):
         return (weights * sec_embs).sum(dim=0, keepdim=True)
 
     def score(self, doc_emb, label_embs):
-        """
-        Dot-product logits for multi-label classification.
+    """
+    Dot-product logits for multi-label classification.
 
-        Args:
-            doc_emb: tensor [1, hidden_dim]
-            label_embs: tensor [100, hidden_dim]
+    Args:
+        doc_emb: tensor [1, hidden_dim]
+        label_embs: tensor [100, hidden_dim]
 
-        Returns:
-            scores: tensor [100]
-        """
-        return (doc_emb @ label_embs.T).squeeze(0)
+    Returns:
+        scores: tensor [1, 100]
+    """
+    return doc_emb @ label_embs.T
