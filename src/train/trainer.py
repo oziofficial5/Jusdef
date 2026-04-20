@@ -60,12 +60,14 @@ def train_one_epoch(
     total_loss = 0.0
     n_graphs = 0
 
+    seen_mask = seen_mask.to(device)
+    label_adj = label_adj.to(device) if label_adj is not None else None
+
     for g in graphs:
         optimizer.zero_grad()
 
         scores, defeat_info, conc_embs = forward_one_graph(model, g, device)
-        targets = g.y.to(device).unsqueeze(0)  # [1, 100]
-        scores = scores.unsqueeze(0)          # [1, 100]
+        targets = g.y.to(device).unsqueeze(0).float()  # [1, 100]
 
         active_embs = None
         defeated_embs = None
@@ -74,11 +76,11 @@ def train_one_epoch(
             defeated_embs = defeat_info["defeated_embs"]
 
         loss = criterion(
-            scores,
-            targets,
-            seen_mask.to(device),
+            scores,          # logits [1, 100]
+            targets,         # targets [1, 100]
+            seen_mask,
             conc_embs=conc_embs,
-            label_adj=label_adj.to(device) if label_adj is not None else None,
+            label_adj=label_adj,
             active_embs=active_embs,
             defeated_embs=defeated_embs,
             stage=stage,
@@ -105,14 +107,14 @@ def evaluate(model, graphs, device):
         all_scores.append(scores.cpu().squeeze(0))          # [100]
         all_targets.append(g.y.cpu())                       # [100]
 
-    # Stack over documents: logits and targets [N_docs, 100]
-    logits_np = torch.stack(all_scores).numpy()
-    targets_np = torch.stack(all_targets).numpy()
+    logits_np = torch.stack(all_scores).numpy()    # [N_docs, 100]
+    targets_np = torch.stack(all_targets).numpy()  # [N_docs, 100]
 
-    # *** CHANGE 1: convert logits -> probabilities before tuning threshold ***
-    probs_np = 1.0 / (1.0 + np.exp(-logits_np))  # sigmoid on logits
+    # Numerically stable sigmoid on logits
+    logits_clipped = np.clip(logits_np, -40, 40)
+    probs_np = 1.0 / (1.0 + np.exp(-logits_clipped))
 
-    # *** CHANGE 2: tune and threshold on probabilities (same as R-GCN) ***
+    # Tune threshold on probabilities
     best_thresh, _ = tune_threshold(probs_np, targets_np)
     preds = (probs_np >= best_thresh).astype(int)
 
@@ -157,11 +159,10 @@ def train_jusdef(config):
     )
 
     seen_set = set(config["seen_labels"])
-    seen_mask = torch.tensor([i in seen_set for i in range(100)],
-                             dtype=torch.bool)
+    seen_mask = torch.tensor([i in seen_set for i in range(100)], dtype=torch.bool)
     label_adj = config.get("label_adj", None)
 
-    best_val_f1 = 0.0
+    best_val_f1 = -1.0
     patience_counter = 0
     checkpoint_path = Path(
         config.get("checkpoint_path", "outputs/checkpoints/best_jusdef.pt")
