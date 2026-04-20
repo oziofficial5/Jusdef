@@ -37,8 +37,9 @@ def get_doc_and_label_embs(model, g, device):
 
     h = model(x_dict, edge_index_dict)
 
-    doc_emb = h["sec"].mean(dim=0, keepdim=True)  # [1, out_dim]
-    label_embs = h["label"]                         # [100, out_dim]
+    # One doc per graph; pool over sections as document representation
+    doc_emb = h["sec"].mean(dim=0, keepdim=True)   # [1, out_dim]
+    label_embs = h["label"]                        # [100, out_dim]
 
     return doc_emb, label_embs
 
@@ -49,17 +50,20 @@ def train_one_epoch(model, graphs, seen_mask, optimizer, device):
     total_loss = 0.0
     n_graphs = 0
 
+    seen_dev = seen_mask.to(device)
+
     for g in graphs:
         g = g.to(device)
         optimizer.zero_grad()
 
         doc_emb, label_embs = get_doc_and_label_embs(model, g, device)
         scores = model.score(doc_emb, label_embs).squeeze(0)  # [100]
-        targets = g.y.to(device)
+        targets = g.y.to(device).float()                      # [100], multi-label
 
-        seen_dev = seen_mask.to(device)
+        # Only train on seen labels
         loss = F.binary_cross_entropy_with_logits(
-            scores[seen_dev], targets[seen_dev])
+            scores[seen_dev], targets[seen_dev]
+        )
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -75,21 +79,26 @@ def train_one_epoch(model, graphs, seen_mask, optimizer, device):
 def evaluate(model, graphs, device):
     """Evaluate model. Returns Macro-F1, Micro-F1, best threshold."""
     model.eval()
-    all_scores = []
+    all_logits = []
     all_targets = []
 
     for g in graphs:
         g = g.to(device)
         doc_emb, label_embs = get_doc_and_label_embs(model, g, device)
-        scores = model.score(doc_emb, label_embs).squeeze(0)
-        all_scores.append(scores.cpu())
+        logits = model.score(doc_emb, label_embs).squeeze(0)  # [100]
+        all_logits.append(logits.cpu())
         all_targets.append(g.y.cpu())
 
-    scores_np = torch.stack(all_scores).numpy()
-    targets_np = torch.stack(all_targets).numpy()
+    logits_np = torch.stack(all_logits).numpy()    # [N_docs, 100]
+    targets_np = torch.stack(all_targets).numpy()  # [N_docs, 100]
 
-    best_thresh, _ = tune_threshold(scores_np, targets_np)
-    preds = (scores_np >= best_thresh).astype(int)
+    # Convert logits -> probabilities
+    probs_np = 1.0 / (1.0 + np.exp(-logits_np))
+
+    # Tune a single global threshold on probabilities
+    best_thresh, _ = tune_threshold(probs_np, targets_np)
+
+    preds = (probs_np >= best_thresh).astype(int)
     macro = f1_score(targets_np, preds, average="macro", zero_division=0)
     micro = f1_score(targets_np, preds, average="micro", zero_division=0)
 
@@ -135,17 +144,25 @@ def main():
     # Seen/unseen split
     df_train = load_eurlex("train")
     seen, unseen = make_seen_unseen_split(df_train, n_unseen=20)
-    seen_mask = torch.tensor([i in set(seen) for i in range(100)], dtype=torch.bool)
+    seen_mask = torch.tensor([i in set(seen) for i in range(100)],
+                             dtype=torch.bool)
     print(f"  Seen: {len(seen)}, Unseen: {len(unseen)}")
 
     # Model
-    model = RGCN(in_dim=768, hidden_dim=args.hidden_dim,
-                 out_dim=args.hidden_dim, num_layers=args.num_layers,
-                 dropout=args.dropout).to(device)
+    model = RGCN(
+        in_dim=768,
+        hidden_dim=args.hidden_dim,
+        out_dim=args.hidden_dim,
+        num_layers=args.num_layers,
+        dropout=args.dropout,
+    ).to(device)
     print(f"  Params: {sum(p.numel() for p in model.parameters()):,}")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr,
-                                   weight_decay=0.01)
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        weight_decay=0.01,
+    )
 
     # Training
     print("\nTraining...")
