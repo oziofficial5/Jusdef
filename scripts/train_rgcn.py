@@ -92,8 +92,9 @@ def evaluate(model, graphs, device):
     logits_np = torch.stack(all_logits).numpy()    # [N_docs, 100]
     targets_np = torch.stack(all_targets).numpy()  # [N_docs, 100]
 
-    # Convert logits -> probabilities
-    probs_np = 1.0 / (1.0 + np.exp(-logits_np))
+    # Convert logits -> probabilities (numerically stable sigmoid)
+    logits_clipped = np.clip(logits_np, -40, 40)
+    probs_np = 1.0 / (1.0 + np.exp(-logits_clipped))
 
     # Tune a single global threshold on probabilities
     best_thresh, _ = tune_threshold(probs_np, targets_np)
@@ -166,7 +167,7 @@ def main():
 
     # Training
     print("\nTraining...")
-    best_val_f1 = 0.0
+    best_val_f1 = -1.0
     patience_counter = 0
     ckpt_dir = Path("outputs/checkpoints")
     ckpt_dir.mkdir(parents=True, exist_ok=True)
