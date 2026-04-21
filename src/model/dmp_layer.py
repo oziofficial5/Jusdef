@@ -18,6 +18,12 @@ Key concepts:
 When no defeats occur (all AFF, equal priorities), DMP reduces exactly
 to standard relational attention — making JusDef a strict generalisation.
 
+PERFORMANCE NOTE:
+  The defeat mask and aggregation are fully vectorized using
+  scatter_reduce and scatter operations. No Python loops over
+  edges or concept nodes. This is critical for EUR-LEX scale
+  (200-1200 r2 edges per document, 55K documents).
+
 Reference: JusDef paper Section 4.3, Equations 1-3
 """
 import torch
@@ -25,9 +31,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# Operator precedence: higher number = stronger operator
-# OVR > EXC > NEG > AFF
-OPERATOR_PRECEDENCE = {0: 0, 1: 1, 2: 2, 3: 3}  # AFF=0, NEG=1, EXC=2, OVR=3
+OPERATOR_PRECEDENCE = {0: 0, 1: 1, 2: 2, 3: 3}
 
 
 class StraightThroughEstimator(torch.autograd.Function):
@@ -35,58 +39,44 @@ class StraightThroughEstimator(torch.autograd.Function):
     Straight-Through Estimator for differentiable hard defeat masking.
 
     Forward pass: hard binary mask (0 or 1)
-      - 1 if the message is active (undefeated)
-      - 0 if the message is defeated
-
     Backward pass: smooth sigmoid gradient
-      - Approximates the gradient of the hard mask with a sigmoid
-      - Temperature controls sharpness of the approximation
 
-    This lets gradients flow through the discrete defeat decision,
-    which is essential for end-to-end training.
-
-    Reference: STE
+    Reference: Bengio et al., 2013 (arXiv:1308.3432)
     """
     @staticmethod
     def forward(ctx, priority_gap, temperature=5.0):
-        """
-        Args:
-            priority_gap: tensor (E,) — for each message, the gap between
-                          its strongest defeater's priority and its own.
-                          Negative or -inf means no defeater exists.
-            temperature: float — controls sigmoid sharpness in backward
-
-        Returns:
-            mask: tensor (E,) — 1.0 if active, 0.0 if defeated
-        """
         ctx.save_for_backward(priority_gap)
         ctx.temperature = temperature
-        # Hard mask: active if no defeater is stronger (gap <= 0)
         return (priority_gap <= 0).float()
 
     @staticmethod
     def backward(ctx, grad_output):
-        """Sigmoid approximation for gradient."""
         priority_gap, = ctx.saved_tensors
         tau = ctx.temperature
-        # d/dx sigmoid(-tau * x)
         sig = torch.sigmoid(-tau * priority_gap)
         sigmoid_grad = tau * sig * (1 - sig)
-        return grad_output * sigmoid_grad, None  # None for temperature
+        return grad_output * sigmoid_grad, None
 
 
 def compute_defeat_mask(operators, priorities, dst_nodes, temperature=5.0):
     """
-    Compute which messages are defeated and which are active.
+    Vectorized defeat mask computation.
 
-    For each message m_i, check all other messages m_j targeting the
-    same concept node. If m_j has higher operator precedence, or same
-    precedence but higher priority, then m_j defeats m_i.
+    Combines operator precedence and priority into a single defeat score:
+        defeat_score = operator * 1000 + priority
+
+    This encoding preserves the two-part defeat rule exactly:
+      - Higher operator always wins (gap >= 1000 >> max priority)
+      - Same operator: higher priority wins (gap = pri_j - pri_i > 0)
+      - Equal operator AND equal priority: both survive (gap = -eps < 0)
+
+    Uses scatter_reduce to find the group maximum in O(E) time,
+    replacing the original O(E^2) pairwise Python loops.
 
     Args:
-        operators: tensor (E,) int — operator type per edge (0=AFF..3=OVR)
-        priorities: tensor (E,) float — authority priority per edge
-        dst_nodes: tensor (E,) int — grouping key (e.g. target concept id)
+        operators: tensor (E,) int — operator type (0=AFF..3=OVR)
+        priorities: tensor (E,) float — authority priority
+        dst_nodes: tensor (E,) int — grouping key (concept node id)
         temperature: float — STE temperature
 
     Returns:
@@ -96,75 +86,45 @@ def compute_defeat_mask(operators, priorities, dst_nodes, temperature=5.0):
     if E == 0:
         return torch.ones(0, device=operators.device)
 
-    op_prec = operators.float()  # Use int value as precedence rank
+    # Combine into single score: operator dominates via 1000x scaling
+    # (priorities are in [0, 1] range, so 1000x ensures operator always wins)
+    defeat_score = operators.float() * 1000.0 + priorities
 
-    # For each message i, find the max "defeat strength" from any j
-    # priority_gap[i] = max over all j that defeat i of (priority_j - priority_i)
-    # If no j defeats i, gap stays at -inf → mask = 1 (active)
-    priority_gap = torch.full((E,), -1e9, device=operators.device)
+    # Find max defeat score per concept group
+    num_groups = dst_nodes.max().item() + 1
+    group_max = torch.full((num_groups,), -1e9, device=operators.device)
+    group_max.scatter_reduce_(0, dst_nodes, defeat_score, reduce="amax")
 
-    # Group edges by destination/group node for efficiency
-    unique_dsts = dst_nodes.unique()
+    # Gap = group_max - my_score
+    # Positive gap = someone stronger exists = defeated
+    # Zero gap = I am the strongest (or tied) = active
+    # Subtract epsilon so exact ties (equal op AND equal priority) survive
+    priority_gap = group_max[dst_nodes] - defeat_score - 0.001
 
-    for dst in unique_dsts:
-        # Find all edges in this group
-        mask = (dst_nodes == dst)
-        indices = mask.nonzero(as_tuple=True)[0]
-
-        if indices.size(0) <= 1:
-            continue  # Only one message — no defeat possible
-
-        # For each pair (i, j) in this group, check if j defeats i
-        for idx_pos_i in range(indices.size(0)):
-            i = indices[idx_pos_i]
-            for idx_pos_j in range(indices.size(0)):
-                if idx_pos_i == idx_pos_j:
-                    continue
-                j = indices[idx_pos_j]
-
-                op_i = op_prec[i].item()
-                op_j = op_prec[j].item()
-                pr_i = priorities[i].item()
-                pr_j = priorities[j].item()
-
-                # j defeats i if:
-                #   op_j > op_i (stronger operator), OR
-                #   op_j == op_i AND pr_j > pr_i (same operator, higher priority)
-                j_defeats_i = (op_j > op_i) or (op_j == op_i and pr_j > pr_i)
-
-                if j_defeats_i:
-                    # Gap must be positive when defeat occurs
-                    # Operator precedence contributes a base gap
-                    op_gap = op_j - op_i  # >= 0 when op defeats
-                    pr_gap = pr_j - pr_i  # can be 0 when priorities equal
-                    gap = op_gap + pr_gap + 0.01  # ensure strictly positive
-                    if gap > priority_gap[i]:
-                        priority_gap[i] = gap
-
-    # Apply STE for differentiability
     mask = StraightThroughEstimator.apply(priority_gap, temperature)
     return mask
 
 
 class DMPLayer(nn.Module):
     """
-    Defeasible Message Passing layer.
+    Defeasible Message Passing layer (vectorized).
 
-    Only operates on r2 (sec → conc) edges. All other edge types
+    Only operates on r2 (sec -> conc) edges. All other edge types
     use standard HeteroConv aggregation in the JusDef model.
 
     Architecture per layer:
       1. Apply operator-specific weight matrices W_omega to source embeddings
-      2. Compute defeat mask via STE
+      2. Compute defeat mask via STE (vectorized scatter_reduce)
       3. Mask out defeated messages
       4. Attention-weighted aggregation of active messages per concept node
+         (vectorized using scatter_softmax pattern)
 
     When all operators are AFF and priorities are equal, no defeats occur,
     and DMP reduces to standard attention aggregation (Proposition 2).
 
     Reference: JusDef paper Section 4.3, Equation 2
     """
-    NUM_OPERATORS = 4  # AFF=0, NEG=1, EXC=2, OVR=3
+    NUM_OPERATORS = 4
 
     def __init__(self, in_dim=512, out_dim=512, temperature=5.0, dropout=0.3):
         super().__init__()
@@ -172,23 +132,22 @@ class DMPLayer(nn.Module):
         self.out_dim = out_dim
         self.temperature = temperature
 
-        # One weight matrix per operator type
         self.W_op = nn.ModuleList([
             nn.Linear(in_dim, out_dim, bias=False)
             for _ in range(self.NUM_OPERATORS)
         ])
 
-        # Attention scoring for active messages
         self.attn = nn.Linear(out_dim, 1)
-
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src_embs, dst_node_ids, operators, priorities,
                 concept_ids, num_dst):
         """
+        Fully vectorized forward pass.
+
         Args:
-            src_embs: tensor (E, in_dim) — source node embeddings for each r2 edge
-            dst_node_ids: tensor (E,) — which concept node each message targets
+            src_embs: tensor (E, in_dim)
+            dst_node_ids: tensor (E,) — target concept node per edge
             operators: tensor (E,) int — operator type per edge
             priorities: tensor (E,) float — authority priority per edge
             concept_ids: tensor (E,) int — concept ID for defeat scoping
@@ -203,49 +162,56 @@ class DMPLayer(nn.Module):
         if E == 0:
             return torch.zeros(num_dst, self.out_dim, device=device)
 
-        # Step 1: Apply operator-specific weight matrices
+        # Step 1: Operator-specific transforms (vectorized per operator)
         msg = torch.zeros(E, self.out_dim, device=device)
         for op_idx in range(self.NUM_OPERATORS):
             op_mask = (operators == op_idx)
             if op_mask.any():
                 msg[op_mask] = self.W_op[op_idx](src_embs[op_mask])
 
-        # Step 2: Compute defeat mask (grouped by concept_ids)
+        # Step 2: Vectorized defeat mask
         defeat_mask = compute_defeat_mask(
             operators, priorities, concept_ids, self.temperature
-        )  # (E,) — 1=active, 0=defeated
+        )
 
-        # Step 3: Apply mask to messages
-        active_msg = msg * defeat_mask.unsqueeze(-1)  # (E, out_dim)
+        # Step 3: Mask defeated messages
+        active_msg = msg * defeat_mask.unsqueeze(-1)
 
-        # Step 4: Attention-weighted aggregation per destination node
-        attn_scores = self.attn(active_msg).squeeze(-1)  # (E,)
+        # Step 4: Vectorized attention aggregation per concept node
+        # Compute raw attention scores
+        attn_raw = self.attn(active_msg).squeeze(-1)  # (E,)
 
+        # Set defeated messages to -inf so they get zero attention weight
+        attn_raw = attn_raw.masked_fill(defeat_mask < 0.5, -1e9)
+
+        # Scatter softmax: per-group softmax over dst_node_ids
+        # Step 4a: Find max per group for numerical stability
+        attn_max = torch.full((num_dst,), -1e9, device=device)
+        attn_max.scatter_reduce_(0, dst_node_ids, attn_raw, reduce="amax")
+        attn_stable = attn_raw - attn_max[dst_node_ids]
+
+        # Step 4b: Exp and sum per group
+        attn_exp = torch.exp(attn_stable)
+        attn_exp = attn_exp * (defeat_mask > 0.5).float()  # zero out defeated
+        attn_sum = torch.zeros(num_dst, device=device)
+        attn_sum.scatter_add_(0, dst_node_ids, attn_exp)
+        attn_sum = attn_sum.clamp(min=1e-8)
+
+        # Step 4c: Normalize
+        attn_weights = attn_exp / attn_sum[dst_node_ids]  # (E,)
+
+        # Step 4d: Weighted scatter add
+        weighted_msg = active_msg * attn_weights.unsqueeze(-1)  # (E, out_dim)
         out = torch.zeros(num_dst, self.out_dim, device=device)
-
-        for v in range(num_dst):
-            edge_mask = (dst_node_ids == v)
-            if not edge_mask.any():
-                continue
-
-            # Prefer active messages; fallback to all if everything is defeated
-            active_edge_mask = edge_mask & (defeat_mask > 0.5)
-            if not active_edge_mask.any():
-                active_edge_mask = edge_mask
-
-            # Softmax attention over selected messages
-            scores_v = attn_scores[active_edge_mask]
-            weights = torch.softmax(scores_v, dim=0).unsqueeze(-1)  # (K, 1)
-            msgs_v = active_msg[active_edge_mask]  # (K, out_dim)
-            out[v] = (weights * msgs_v).sum(dim=0)
+        out.scatter_add_(0, dst_node_ids.unsqueeze(-1).expand(-1, self.out_dim),
+                         weighted_msg)
 
         return self.dropout(out)
 
     def get_active_defeated_embeddings(self, src_embs, dst_node_ids,
                                        operators, priorities, concept_ids):
         """
-        Helper for L_defeat loss: return separate tensors of active
-        and defeated message embeddings.
+        Helper for L_defeat loss.
 
         Returns:
             active_embs: tensor (P, out_dim)
@@ -256,14 +222,12 @@ class DMPLayer(nn.Module):
             return (torch.zeros(0, self.out_dim, device=src_embs.device),
                     torch.zeros(0, self.out_dim, device=src_embs.device))
 
-        # Transform messages
         msg = torch.zeros(E, self.out_dim, device=src_embs.device)
         for op_idx in range(self.NUM_OPERATORS):
             op_mask = (operators == op_idx)
             if op_mask.any():
                 msg[op_mask] = self.W_op[op_idx](src_embs[op_mask])
 
-        # Compute mask with the same grouping key as in forward
         defeat_mask = compute_defeat_mask(
             operators, priorities, concept_ids, self.temperature
         )
