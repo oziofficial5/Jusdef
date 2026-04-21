@@ -9,7 +9,7 @@ Architecture:
   5. Dot-product logits against label embeddings
 
 When DMP is disabled (ablation -DMP), r2 edges use standard SAGEConv
-and the model reduces to R-GCN.
+and the model reduces to an R-GCN-style variant.
 
 Reference: JusDef paper Section 4
 """
@@ -42,25 +42,20 @@ class JusDef(nn.Module):
         self.use_dmp = use_dmp
         self.use_authority = use_authority
 
-        # Input projections (one per node type)
         node_types = ["doc", "sec", "conc", "auth", "label"]
         self.input_proj = nn.ModuleDict({
             nt: Linear(in_dim, hidden_dim) for nt in node_types
         })
 
-        # Authority scorer (for learned priorities on r2 edges)
         if use_authority:
             self.authority_scorer = AuthorityScorer(type_emb_dim=8)
 
-        # DMP layers (one per GNN layer, only for r2 edges)
         if use_dmp:
             self.dmp_layers = nn.ModuleList([
                 DMPLayer(hidden_dim, hidden_dim, temperature, dropout)
                 for _ in range(num_layers)
             ])
 
-        # Standard HeteroConv for non-r2 edges
-        # Also includes r2 as SAGEConv when DMP is disabled (ablation)
         self.hetero_convs = nn.ModuleList()
         for _ in range(num_layers):
             conv_dict = {
@@ -69,21 +64,14 @@ class JusDef(nn.Module):
                 ("label", "parent_of", "label"): SAGEConv(hidden_dim, hidden_dim),
                 ("sec", "cites", "auth"): SAGEConv(hidden_dim, hidden_dim),
             }
-            # When DMP is off, r2 uses standard aggregation
             if not use_dmp:
                 conv_dict[("sec", "mentions", "conc")] = SAGEConv(
                     hidden_dim, hidden_dim
                 )
+            self.hetero_convs.append(HeteroConv(conv_dict, aggr="sum"))
 
-            conv = HeteroConv(conv_dict, aggr="sum")
-            self.hetero_convs.append(conv)
-
-        # Output projection
         self.out_proj = Linear(hidden_dim, hidden_dim)
-
-        # Section-level attention for document pooling
         self.sec_attention = nn.Linear(hidden_dim, 1)
-
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x_dict, edge_index_dict, edge_attr_dict=None):
@@ -99,88 +87,76 @@ class JusDef(nn.Module):
         Returns:
             h: {node_type: tensor [N, hidden_dim]}
             defeat_info: dict with active/defeated embeddings (for L_defeat)
-                         None if DMP is disabled
+                         None if DMP is disabled or no valid r2 edges exist
         """
-        # Input projection
         h = {}
-        for nt in x_dict:
+        for nt, x in x_dict.items():
             if nt in self.input_proj:
-                h[nt] = F.relu(self.input_proj[nt](x_dict[nt]))
+                h[nt] = F.relu(self.input_proj[nt](x))
             else:
-                h[nt] = x_dict[nt]
+                h[nt] = x
 
         defeat_info = {"active_embs": [], "defeated_embs": []}
+        r2_key = ("sec", "mentions", "conc")
 
-        for layer_idx in range(len(self.hetero_convs)):
-            hetero_conv = self.hetero_convs[layer_idx]
-
-            # 1. Standard hetero-conv for non-r2 edges (or all edges if no DMP)
+        for layer_idx, hetero_conv in enumerate(self.hetero_convs):
             if self.use_dmp:
-                # Exclude r2 from hetero_conv — DMP handles it
-                non_r2_edges = {
+                candidate_edges = {
                     k: v for k, v in edge_index_dict.items()
-                    if k != ("sec", "mentions", "conc") and v.size(1) > 0
+                    if k != r2_key and v.size(1) > 0 and k in hetero_conv.convs
                 }
             else:
-                non_r2_edges = {
+                candidate_edges = {
                     k: v for k, v in edge_index_dict.items()
-                    if v.size(1) > 0
+                    if v.size(1) > 0 and k in hetero_conv.convs
                 }
 
-            # Filter to edges the conv knows about
-            valid_edges = {
-                k: v for k, v in non_r2_edges.items()
-                if k in hetero_conv.convs
-            }
+            new_h = {}
+            if candidate_edges:
+                new_h = hetero_conv(h, candidate_edges)
+                new_h = {
+                    k: self.dropout(F.relu(v))
+                    for k, v in new_h.items()
+                }
 
-            if valid_edges:
-                new_h = hetero_conv(h, valid_edges)
-                for k in new_h:
-                    h[k] = self.dropout(F.relu(new_h[k]))
+            for nt in h:
+                if nt not in new_h:
+                    new_h[nt] = h[nt]
+            h = new_h
 
-            # 2. DMP for r2 edges (sec -> conc)
-            if self.use_dmp and ("sec", "mentions", "conc") in edge_index_dict:
-                r2_ei = edge_index_dict[("sec", "mentions", "conc")]
-
-                if r2_ei.size(1) > 0 and edge_attr_dict is not None:
-                    r2_key = ("sec", "mentions", "conc")
+            if self.use_dmp and r2_key in edge_index_dict and edge_attr_dict is not None:
+                r2_ei = edge_index_dict[r2_key]
+                if r2_ei.size(1) > 0:
                     r2_ops = edge_attr_dict[r2_key]["operator"]
                     r2_pri_raw = edge_attr_dict[r2_key]["priority"]
 
-                    # Optionally refine priorities with learned authority scorer
                     if self.use_authority and "auth" in h:
                         r2_pri = r2_pri_raw
                     else:
                         r2_pri = r2_pri_raw
 
-                    dmp = self.dmp_layers[layer_idx]
-
-                    src_embs = h["sec"][r2_ei[0]]  # (E, hidden)
+                    src_embs = h["sec"][r2_ei[0]]
                     dst_ids = r2_ei[1]
                     concept_ids = dst_ids
                     num_conc = h["conc"].size(0)
 
-                    dmp_out = dmp(
+                    dmp_out = self.dmp_layers[layer_idx](
                         src_embs, dst_ids, r2_ops, r2_pri, concept_ids, num_conc
                     )
 
-                    # Residual connection
                     h["conc"] = h["conc"] + dmp_out
 
-                    # Collect active/defeated for L_defeat
-                    active, defeated = dmp.get_active_defeated_embeddings(
+                    active, defeated = self.dmp_layers[layer_idx].get_active_defeated_embeddings(
                         src_embs, dst_ids, r2_ops, r2_pri, concept_ids
                     )
                     defeat_info["active_embs"].append(active)
                     defeat_info["defeated_embs"].append(defeated)
 
-        # Output projection
         h = {k: self.out_proj(v) for k, v in h.items()}
 
-        # Combine defeat info across layers
         if defeat_info["active_embs"]:
-            defeat_info["active_embs"] = torch.cat(defeat_info["active_embs"])
-            defeat_info["defeated_embs"] = torch.cat(defeat_info["defeated_embs"])
+            defeat_info["active_embs"] = torch.cat(defeat_info["active_embs"], dim=0)
+            defeat_info["defeated_embs"] = torch.cat(defeat_info["defeated_embs"], dim=0)
         else:
             defeat_info = None
 
@@ -196,9 +172,9 @@ class JusDef(nn.Module):
         Returns:
             doc_emb: tensor [1, hidden_dim]
         """
-        attn = self.sec_attention(sec_embs)        # (N_sec, 1)
-        weights = torch.softmax(attn, dim=0)       # (N_sec, 1)
-        return (weights * sec_embs).sum(dim=0, keepdim=True)  # (1, hidden)
+        attn = self.sec_attention(sec_embs)
+        weights = torch.softmax(attn, dim=0)
+        return (weights * sec_embs).sum(dim=0, keepdim=True)
 
     def score(self, doc_emb, label_embs):
         """
@@ -206,9 +182,9 @@ class JusDef(nn.Module):
 
         Args:
             doc_emb: tensor [1, hidden_dim]
-            label_embs: tensor [100, hidden_dim]
+            label_embs: tensor [N_labels, hidden_dim]
 
         Returns:
-            scores: tensor [1, 100]
+            scores: tensor [1, N_labels]
         """
         return doc_emb @ label_embs.T
