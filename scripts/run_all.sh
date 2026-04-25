@@ -5,8 +5,6 @@ source .venv/bin/activate
 echo "Started: $(date)"
 df -h .
 
-echo "=== M3: Build graphs ==="
-python scripts/build_graphs.py
 
 echo "=== M4: R-GCN ==="
 for SEED in 42 43 44; do

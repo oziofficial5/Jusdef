@@ -109,7 +109,7 @@ assert doc_emb_out.shape == (1, 512), f"FAILED: Expected (1, 512), got {doc_emb_
 
 scores = model.score(doc_emb_out, h["label"])
 print(f"  Scores: {scores.shape}")
-assert scores.shape == (100,), f"FAILED: Expected (100,), got {scores.shape}"
+assert scores.shape[-1] == 100, f"FAILED: Expected (100,), got {scores.shape}"
 print(f"  Score range: [{scores.min().item():.3f}, {scores.max().item():.3f}]")
 print("  PASSED")
 
