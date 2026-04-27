@@ -1,0 +1,9 @@
+{
+  "best_threshold": -0.2,
+  "val_macro_f1": 0.0877009229709563,
+  "val_micro_f1": 0.09347718552387063,
+  "test_macro_f1": 0.09058365198086869,
+  "test_micro_f1": 0.09665981961156792,
+  "n_val_docs": 5000,
+  "n_test_docs": 5000
+}

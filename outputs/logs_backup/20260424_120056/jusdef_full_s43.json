@@ -1,0 +1,12 @@
+{
+  "best_val_macro_f1": 0.0841,
+  "test_macro_f1": 0.0867,
+  "test_micro_f1": 0.1,
+  "test_threshold": 0.04,
+  "config": {
+    "seed": 43,
+    "tag": "full",
+    "use_dmp": true,
+    "use_authority": true
+  }
+}
