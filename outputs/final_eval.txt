@@ -1,0 +1,90 @@
+Loading test data...
+Test graphs: 5000
+
+full_s42 (h=512, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2519 micro=0.3879 seen=0.3085 unseen=0.0255 exc=0.3562 t=0.10
+
+full_s43 (h=512, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2453 micro=0.3803 seen=0.2977 unseen=0.0359 exc=0.3763 t=0.10
+
+full_s44 (h=512, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2463 micro=0.3888 seen=0.3014 unseen=0.0255 exc=0.3748 t=0.14
+
+full_v2_s42 (h=512, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2483 micro=0.3850 seen=0.3036 unseen=0.0273 exc=0.3484 t=0.12
+
+h768_lowdef_s42 (h=768, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2316 micro=0.3732 seen=0.2800 unseen=0.0378 exc=0.3247 t=0.08
+
+h768_lowdef_s43 (h=768, dmp=True, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2413 micro=0.3877 seen=0.2984 unseen=0.0130 exc=0.3538 t=0.14
+
+no_dmp_s42 (h=512, dmp=False, auth=True)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2477 micro=0.3559 seen=0.3009 unseen=0.0351 exc=0.3570 t=0.10
+
+no_auth_s42 (h=512, dmp=True, auth=False)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2595 micro=0.3734 seen=0.3129 unseen=0.0458 exc=0.3585 t=0.08
+
+no_dmp_no_auth_s42 (h=512, dmp=False, auth=False)
+  progress: 0/5000
+  progress: 1000/5000
+  progress: 2000/5000
+  progress: 3000/5000
+  progress: 4000/5000
+  RESULT: macro=0.2523 micro=0.3723 seen=0.3017 unseen=0.0547 exc=0.3234 t=0.08
+
+
+=== FINAL SUMMARY ===
+tag                       macro    micro    seen     unseen   exc     
+----------------------------------------------------------------------
+full_s42                  0.2519   0.3879   0.3085   0.0255   0.3562  
+full_s43                  0.2453   0.3803   0.2977   0.0359   0.3763  
+full_s44                  0.2463   0.3888   0.3014   0.0255   0.3748  
+full_v2_s42               0.2483   0.3850   0.3036   0.0273   0.3484  
+h768_lowdef_s42           0.2316   0.3732   0.2800   0.0378   0.3247  
+h768_lowdef_s43           0.2413   0.3877   0.2984   0.0130   0.3538  
+no_dmp_s42                0.2477   0.3559   0.3009   0.0351   0.3570  
+no_auth_s42               0.2595   0.3734   0.3129   0.0458   0.3585  
+no_dmp_no_auth_s42        0.2523   0.3723   0.3017   0.0547   0.3234  
+
+Saved to outputs/logs/jusdef_all_detailed.json

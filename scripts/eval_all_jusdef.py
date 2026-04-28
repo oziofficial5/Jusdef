@@ -20,11 +20,15 @@ print(f'Test graphs: {len(test_graphs)}', flush=True)
 
 # (tag, hidden_dim, use_dmp, use_authority)
 configs = [
-    ('h768_lowdef_s42', 768, True, True),
-    ('h768_lowdef_s43', 768, True, True),
-    ('no_dmp_s42', 512, False, True),
-    ('no_auth_s42', 512, True, False),
-    ('no_dmp_no_auth_s42', 512, False, False),
+    ('full_s42',            512, True,  True),
+    ('full_s43',            512, True,  True),
+    ('full_s44',            512, True,  True),
+    ('full_v2_s42',         512, True,  True),
+    ('h768_lowdef_s42',     768, True,  True),
+    ('h768_lowdef_s43',     768, True,  True),
+    ('no_dmp_s42',          512, False, True),
+    ('no_auth_s42',         512, True,  False),
+    ('no_dmp_no_auth_s42',  512, False, False),
 ]
 
 results = {}
