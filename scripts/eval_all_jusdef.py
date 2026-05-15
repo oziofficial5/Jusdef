@@ -20,34 +20,57 @@ print(f'Test graphs: {len(test_graphs)}', flush=True)
 
 # (tag, hidden_dim, use_dmp, use_authority)
 configs = [
+    # Full JusDef (main model, h=512)
     ('full_s42',            512, True,  True),
     ('full_s43',            512, True,  True),
     ('full_s44',            512, True,  True),
+
+    # Old v2 run (kept for completeness if checkpoint exists)
     ('full_v2_s42',         512, True,  True),
+
+    # h768 low-def experiments
     ('h768_lowdef_s42',     768, True,  True),
     ('h768_lowdef_s43',     768, True,  True),
+
+    # Ablations: -DMP (no defeat, keep authority)
     ('no_dmp_s42',          512, False, True),
+    ('no_dmp_s43',          512, False, True),
+    ('no_dmp_s44',          512, False, True),
+
+    # Ablations: -Authority (keep DMP, no learned authority scorer)
     ('no_auth_s42',         512, True,  False),
+    ('no_auth_s43',         512, True,  False),
+    ('no_auth_s44',         512, True,  False),
+
+    # Ablations: -DMP -Authority (R-GCN-style over JusDef KG)
     ('no_dmp_no_auth_s42',  512, False, False),
+    ('no_dmp_no_auth_s43',  512, False, False),
+    ('no_dmp_no_auth_s44',  512, False, False),
 ]
 
 results = {}
 for tag, hd, dmp, auth in configs:
     ckpt = f'outputs/checkpoints/jusdef_{tag}.pt'
     if not os.path.exists(ckpt):
-        print(f'SKIP {tag}: no checkpoint', flush=True)
+        print(f'SKIP {tag}: no checkpoint ({ckpt})', flush=True)
         continue
-    
+
     print(f'\n{tag} (h={hd}, dmp={dmp}, auth={auth})', flush=True)
     try:
-        model = JusDef(in_dim=768, hidden_dim=hd, num_layers=2,
-                       use_dmp=dmp, use_authority=auth)
-        model.load_state_dict(torch.load(ckpt, map_location='cpu'))
+        model = JusDef(
+            in_dim=768,
+            hidden_dim=hd,
+            num_layers=2,
+            use_dmp=dmp,
+            use_authority=auth,
+        )
+        state = torch.load(ckpt, map_location='cpu')
+        model.load_state_dict(state)
         model.eval()
     except Exception as e:
         print(f'  LOAD ERROR: {e}', flush=True)
         continue
-    
+
     all_logits, all_targets = [], []
     with torch.no_grad():
         for i, g in enumerate(test_graphs):
@@ -56,25 +79,34 @@ for tag, hd, dmp, auth in configs:
             scores, _, _ = forward_one_graph(model, g, 'cpu')
             all_logits.append(scores.cpu().view(-1))
             all_targets.append(g.y.cpu())
-    
+
     logits = torch.stack(all_logits).numpy()
     targets = torch.stack(all_targets).numpy()
     probs = 1.0 / (1.0 + np.exp(-np.clip(logits, -40, 40)))
     best_t, _ = tune_threshold(probs, targets)
     preds = (probs >= best_t).astype(int)
-    
+
     r = {
         'macro': float(f1_score(targets, preds, average='macro', zero_division=0)),
         'micro': float(f1_score(targets, preds, average='micro', zero_division=0)),
-        'seen': float(f1_score(targets[:,seen], preds[:,seen], average='macro', zero_division=0)),
-        'unseen': float(f1_score(targets[:,unseen], preds[:,unseen], average='macro', zero_division=0)),
-        'exc': float(f1_score(targets[:,exc_idx], preds[:,exc_idx], average='macro', zero_division=0)),
+        'seen': float(f1_score(targets[:, seen], preds[:, seen],
+                               average='macro', zero_division=0)),
+        'unseen': float(f1_score(targets[:, unseen], preds[:, unseen],
+                                 average='macro', zero_division=0)),
+        'exc': float(f1_score(targets[:, exc_idx], preds[:, exc_idx],
+                              average='macro', zero_division=0)),
         'threshold': float(best_t),
     }
     results[tag] = r
-    print(f'  RESULT: macro={r["macro"]:.4f} micro={r["micro"]:.4f} seen={r["seen"]:.4f} unseen={r["unseen"]:.4f} exc={r["exc"]:.4f} t={r["threshold"]:.2f}', flush=True)
+    print(
+        f'  RESULT: macro={r["macro"]:.4f} micro={r["micro"]:.4f} '
+        f'seen={r["seen"]:.4f} unseen={r["unseen"]:.4f} '
+        f'exc={r["exc"]:.4f} t={r["threshold"]:.2f}',
+        flush=True,
+    )
 
-with open('outputs/logs/jusdef_all_detailed.json', 'w') as f:
+out_path = 'outputs/logs/jusdef_all_detailed.json'
+with open(out_path, 'w') as f:
     json.dump(results, f, indent=2)
 
 print('\n\n=== FINAL SUMMARY ===', flush=True)
@@ -83,4 +115,4 @@ print('-' * 70, flush=True)
 for tag, r in results.items():
     print(f'{tag:<25} {r["macro"]:<8.4f} {r["micro"]:<8.4f} {r["seen"]:<8.4f} {r["unseen"]:<8.4f} {r["exc"]:<8.4f}', flush=True)
 
-print(f'\nSaved to outputs/logs/jusdef_all_detailed.json', flush=True)
+print(f'\nSaved to {out_path}', flush=True)
