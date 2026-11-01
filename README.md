@@ -1,11 +1,11 @@
-# JusDef — v1 workshop code (archived)
+# JusDef: v1 workshop code (archived)
 
 > **This repository is superseded. Active work is at
 > [`oziofficial5/jusdefv2`](https://github.com/oziofficial5/jusdefv2).**
 >
-> Everything released with the doctoral thesis — the corpus, the trained
+> Everything released with the doctoral thesis, the corpus, the trained
 > detector, the full experimental code, and the per-seed logs backing every
-> reported number — lives there. This repository is kept for provenance only.
+> reported number, lives there. This repository is kept for provenance only.
 
 ---
 
@@ -36,7 +36,7 @@ reading the paper alongside the code. Stage 2 is the scope-nested hypergraph
 construction, which the thesis does not carry forward: there the operator
 composition acts earlier, at detection time, under an outermost-wins rule, and
 no hypergraph is built at inference. And the LABEL → LABEL relation drawn in
-Stage 1 was declared but never populated — an empty relation, which is the
+Stage 1 was declared but never populated, an empty relation, which is the
 defect correction F3a later repairs.*
 
 ```
@@ -62,8 +62,8 @@ fitted to the test set rather than to validation. The resulting optimistic bias
 is on the order of 1–3 macro-F1 points.
 
 The discrepancy is between the code and the paper, not inside the paper. The
-workshop text states the correct protocol — "a global decision threshold is tuned
-on validation Macro-F1 and fixed at test time" — and it is the released
+workshop text states the correct protocol, "a global decision threshold is tuned
+on validation Macro-F1 and fixed at test time", and it is the released
 evaluation script that departed from it.
 
 Under the corrected protocol the reported advantage is not reproduced, and the
@@ -91,9 +91,8 @@ intended operator propagation from actually happening:
 
 *The three corrections against the v1 graph they repair. Node placement is
 identical across the two panels, so every visible difference is a correction.
-F3a is tagged twice because it populates two relations. Everything unmarked —
-including the operator-indexed weight matrices, the defeat gate and the
-attention aggregation — is inherited from v1 unchanged.*
+F3a is tagged twice because it populates two relations. Everything unmarked, including the operator-indexed weight matrices, the defeat gate and the
+attention aggregation, is inherited from v1 unchanged.*
 
 F2 bears directly on an empirical claim of the paper. The −Authority ablation
 removes the scorer and substitutes raw authority features, and the paper reads
